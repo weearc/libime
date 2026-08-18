@@ -46,6 +46,7 @@ if (ENABLE_DATA)
     add_dependencies(testprediction lm)
     add_dependencies(testpinyinprediction lm)
     add_dependencies(testtableime_unit lm)
+    target_sources(testdecoder PRIVATE ../src/libime/core/decoder_v2.cpp)
 endif()
 
 add_executable(triebench triebench.cpp)

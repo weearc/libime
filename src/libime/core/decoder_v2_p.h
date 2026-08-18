@@ -12,6 +12,7 @@
 #include <limits>
 #include <vector>
 #include "lattice.h"
+#include "segmentgraph.h"
 
 namespace libime::decoder_v2 {
 
@@ -67,6 +68,9 @@ struct Counters {
 
 using EdgeScoreProvider =
     std::function<float(LatticeNode &, const LatticeNode &)>;
+
+ScoredDag buildScoredDag(const SegmentGraph &graph, const Lattice &lattice,
+                         size_t beamSize, bool &invariantFailure);
 
 std::vector<SentenceResult> enumerate(ScoredDag &dag,
                                       const SentenceResult &forwardBest,

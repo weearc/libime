@@ -4,12 +4,16 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 #include <cstddef>
+#include <bit>
+#include <cstdint>
+#include <array>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <ostream>
 #include <fcitx-utils/log.h>
 #include "libime/core/decoder.h"
+#include "libime/core/decoder_v2_p.h"
 #include "libime/core/languagemodel.h"
 #include "libime/core/lattice.h"
 #include "libime/core/segmentgraph.h"
@@ -20,6 +24,59 @@
 #include "testutils.h"
 
 using namespace libime;
+
+void testDecoderV2Differential(PinyinDecoder &decoder) {
+    const std::array<std::pair<const char *, PinyinFuzzyFlags>, 6> cases = {{
+        {"xian", PinyinFuzzyFlag::Inner},
+        {"xiian", PinyinFuzzyFlag::Inner},
+        {"tanan", PinyinFuzzyFlag::Inner},
+        {"jin'an", PinyinFuzzyFlag::Inner},
+        {"anqilaibufangbian", PinyinFuzzyFlag::Inner},
+        {"zhizuoxujibianchengleshunshuituizhoudeshiqing",
+         PinyinFuzzyFlag::Inner},
+    }};
+    for (const auto &[pinyin, flags] : cases) {
+        for (const auto nbest : {size_t(1), size_t(2), size_t(5)}) {
+            const std::array<std::pair<float, float>, 3> limits = {{
+                {std::numeric_limits<float>::max(),
+                 -std::numeric_limits<float>::max()},
+                {2.0F, -std::numeric_limits<float>::max()},
+                {std::numeric_limits<float>::max(), -0.2F},
+            }};
+            for (const auto &[maxDistance, minPath] : limits) {
+                auto graph = PinyinEncoder::parseUserPinyin(pinyin, flags);
+                Lattice lattice;
+                FCITX_ASSERT(decoder.decode(
+                    lattice, graph, nbest, decoder.model()->nullState(),
+                    maxDistance, minPath, Decoder::beamSizeDefault,
+                    Decoder::frameSizeDefault, nullptr));
+                FCITX_ASSERT(lattice.sentenceSize() > 0);
+                bool invariantFailure = false;
+                auto dag = decoder_v2::buildScoredDag(
+                    graph, lattice, Decoder::beamSizeDefault, invariantFailure);
+                FCITX_ASSERT(!invariantFailure);
+                decoder_v2::Counters counters;
+                State edgeState;
+                const auto scoreProvider = [&](LatticeNode &from,
+                                               const LatticeNode &to) {
+                    return decoder.model()->score(from.state(), to, edgeState) +
+                           to.cost();
+                };
+                const auto results = decoder_v2::enumerate(
+                    dag, lattice.sentence(0), nbest, maxDistance, minPath,
+                    scoreProvider, counters);
+                FCITX_ASSERT(!counters.invariantFailure);
+                FCITX_ASSERT(results.size() == lattice.sentenceSize());
+                for (size_t i = 0; i < results.size(); i++) {
+                    const auto &legacy = lattice.sentence(i);
+                    FCITX_ASSERT(results[i].toString() == legacy.toString());
+                    FCITX_ASSERT(std::bit_cast<uint32_t>(results[i].score()) ==
+                                 std::bit_cast<uint32_t>(legacy.score()));
+                }
+            }
+        }
+    }
+}
 
 void testTime(PinyinDictionary & /*unused*/, Decoder &decoder,
               const char *pinyin, PinyinFuzzyFlags flags, int nbest = 1) {
@@ -48,6 +105,7 @@ int main() {
               PinyinDictFormat::Binary);
     LanguageModel model(LIBIME_BINARY_DIR "/data/sc.lm");
     PinyinDecoder decoder(&dict, &model);
+    testDecoderV2Differential(decoder);
     testTime(dict, decoder, "wojiushixiangceshi", PinyinFuzzyFlag::None);
     testTime(dict, decoder, "xian", PinyinFuzzyFlag::Inner);
     testTime(dict, decoder, "xiian", PinyinFuzzyFlag::Inner);

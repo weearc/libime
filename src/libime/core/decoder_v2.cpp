@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_set>
 #include <utility>
+#include <unordered_map>
 
 namespace libime::decoder_v2 {
 namespace {
@@ -229,6 +230,94 @@ SentenceResult materialize(const ScoredDag &dag, const Enumerator &enumerator,
 }
 
 } // namespace
+
+ScoredDag buildScoredDag(const SegmentGraph &graph, const Lattice &lattice,
+                         size_t beamSize, bool &invariantFailure) {
+    ScoredDag dag;
+    std::unordered_map<const LatticeNode *, SearchNodeId> nodeIds;
+    auto appendUnit = [&](const SegmentGraphNode *graphNode) {
+        for (const auto &constNode : lattice.nodes(graphNode)) {
+            if (dag.nodes.size() >= InvalidNodeId) {
+                invariantFailure = true;
+                return;
+            }
+            auto *node = const_cast<LatticeNode *>(&constNode);
+            const auto id = static_cast<SearchNodeId>(dag.nodes.size());
+            nodeIds.emplace(node, id);
+            dag.nodes.push_back({node, node->score()});
+        }
+    };
+
+    appendUnit(&graph.start());
+    if (invariantFailure || dag.nodes.size() != 1) {
+        invariantFailure = true;
+        return dag;
+    }
+    dag.bos = 0;
+    graph.bfs(&graph.start(), [&](const SegmentGraphBase &,
+                                  const SegmentGraphNode *node) {
+        if (node != &graph.start()) {
+            appendUnit(node);
+        }
+        return !invariantFailure;
+    });
+    const auto nodesBeforeEnd = dag.nodes.size();
+    appendUnit(nullptr);
+    if (invariantFailure || dag.nodes.size() != nodesBeforeEnd + 1) {
+        invariantFailure = true;
+        return dag;
+    }
+    dag.eos = static_cast<SearchNodeId>(dag.nodes.size() - 1);
+    dag.eosBestScore = dag.nodes[dag.eos].bestPrefixScore;
+
+    std::vector<std::vector<SearchEdgeId>> incoming(dag.nodes.size());
+    std::vector<std::vector<SearchEdgeId>> outgoing(dag.nodes.size());
+    uint32_t ordinal = 0;
+    for (SearchNodeId targetId = 0; targetId < dag.nodes.size(); targetId++) {
+        if (targetId == dag.bos) {
+            continue;
+        }
+        auto *target = dag.nodes[targetId].latticeNode;
+        size_t traversed = 0;
+        for (const auto &constFrom : lattice.nodes(target->from())) {
+            if (beamSize && traversed++ >= beamSize) {
+                break;
+            }
+            auto *from = const_cast<LatticeNode *>(&constFrom);
+            const auto fromIter = nodeIds.find(from);
+            if (fromIter == nodeIds.end() || from->to() != target->from() ||
+                dag.edges.size() >= InvalidEdgeId) {
+                invariantFailure = true;
+                return dag;
+            }
+            const auto edgeId = static_cast<SearchEdgeId>(dag.edges.size());
+            dag.edges.push_back({fromIter->second, targetId,
+                                 std::numeric_limits<float>::quiet_NaN(),
+                                 ordinal++});
+            incoming[targetId].push_back(edgeId);
+            outgoing[fromIter->second].push_back(edgeId);
+            if (target->prev() == from) {
+                dag.nodes[targetId].bestPrevEdge = edgeId;
+            }
+        }
+        if (dag.nodes[targetId].bestPrevEdge == InvalidEdgeId) {
+            invariantFailure = true;
+            return dag;
+        }
+    }
+    for (SearchNodeId id = 0; id < dag.nodes.size(); id++) {
+        auto &node = dag.nodes[id];
+        node.incomingBegin = static_cast<uint32_t>(dag.incomingEdges.size());
+        node.incomingCount = static_cast<uint32_t>(incoming[id].size());
+        dag.incomingEdges.insert(dag.incomingEdges.end(), incoming[id].begin(),
+                                 incoming[id].end());
+        node.outgoingBegin = static_cast<uint32_t>(dag.outgoingEdges.size());
+        node.outgoingCount = static_cast<uint32_t>(outgoing[id].size());
+        dag.outgoingEdges.insert(dag.outgoingEdges.end(), outgoing[id].begin(),
+                                 outgoing[id].end());
+    }
+    return dag;
+}
 
 std::vector<SentenceResult> enumerate(ScoredDag &dag,
                                       const SentenceResult &forwardBest,
