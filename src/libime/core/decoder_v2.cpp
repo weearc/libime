@@ -241,6 +241,8 @@ ScoredDag buildScoredDag(const SegmentGraph &graph, const Lattice &lattice,
                 invariantFailure = true;
                 return;
             }
+            // The DAG borrows lattice-node identity; construction does not
+            // mutate through this localized cast.
             auto *node = const_cast<LatticeNode *>(&constNode);
             const auto id = static_cast<SearchNodeId>(dag.nodes.size());
             nodeIds.emplace(node, id);
@@ -283,6 +285,8 @@ ScoredDag buildScoredDag(const SegmentGraph &graph, const Lattice &lattice,
             if (beamSize && traversed++ >= beamSize) {
                 break;
             }
+            // The DAG borrows lattice-node identity; scoring uses the
+            // existing mutable state API without changing the lattice here.
             auto *from = const_cast<LatticeNode *>(&constFrom);
             const auto fromIter = nodeIds.find(from);
             if (fromIter == nodeIds.end() || from->to() != target->from() ||

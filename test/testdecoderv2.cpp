@@ -111,6 +111,23 @@ void testLazyMergeAndTie() {
     assertScore(results[1].score(), -0.2F + (-0.1F + (-0.1F + 0.0F)));
     FCITX_ASSERT(counters.nbestLmScoreCalls == 0);
     FCITX_ASSERT(!counters.invariantFailure);
+
+    for (size_t repeat = 0; repeat < 5; repeat++) {
+        auto repeatedFixture = layeredFixture();
+        SentenceResult repeatedForward{{&repeatedFixture->a,
+                                        &repeatedFixture->x},
+                                       ax};
+        Counters repeatedCounters;
+        const auto repeated = enumerate(
+            repeatedFixture->dag, repeatedForward, 3,
+            std::numeric_limits<float>::max(),
+            -std::numeric_limits<float>::max(), repeatedCounters);
+        FCITX_ASSERT(repeated.size() == results.size());
+        for (size_t i = 0; i < repeated.size(); i++) {
+            FCITX_ASSERT(repeated[i].toString() == results[i].toString());
+            assertScore(repeated[i].score(), results[i].score());
+        }
+    }
 }
 
 void testCompleteStringDedup() {
