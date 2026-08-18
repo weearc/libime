@@ -27,8 +27,7 @@ required by this branch.
 
 Performance numbers below came from an Android arm64 device benchmark
 environment. Correctness is host-level and does not depend on device logs.
-The branch is based on current upstream `master`; the exact final base is
-recorded in the hardening report.
+The RFC branch is maintained against current upstream `master`.
 
 ## 6. Measurement Method
 

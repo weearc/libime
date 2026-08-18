@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -108,6 +109,8 @@ void testLazyMergeAndTie() {
     FCITX_ASSERT(results[1].toString() == "bx");
     FCITX_ASSERT(results[2].toString() == "ay");
     FCITX_ASSERT(results[3].toString() == "by");
+    FCITX_ASSERT(std::bit_cast<uint32_t>(results[0].score()) ==
+                 std::bit_cast<uint32_t>(results[1].score()));
     assertScore(results[1].score(), -0.2F + (-0.1F + (-0.1F + 0.0F)));
     FCITX_ASSERT(counters.nbestLmScoreCalls == 0);
     FCITX_ASSERT(!counters.invariantFailure);
@@ -125,6 +128,8 @@ void testLazyMergeAndTie() {
         FCITX_ASSERT(repeated.size() == results.size());
         for (size_t i = 0; i < repeated.size(); i++) {
             FCITX_ASSERT(repeated[i].toString() == results[i].toString());
+            FCITX_ASSERT(std::bit_cast<uint32_t>(repeated[i].score()) ==
+                         std::bit_cast<uint32_t>(results[i].score()));
             assertScore(repeated[i].score(), results[i].score());
         }
     }
@@ -154,6 +159,26 @@ void testPartialMaxDistance() {
         enumerate(fixture->dag, forward, 3, 1.0F,
                   -std::numeric_limits<float>::max(), counters);
     FCITX_ASSERT(results.size() == 1);
+}
+
+void testDuplicateBeforeDistance() {
+    auto fixture = layeredFixture();
+    const float recomposedScore = -0.4F;
+    const float forwardScore = std::nextafter(
+        recomposedScore, -std::numeric_limits<float>::infinity());
+    fixture->dag.eosBestScore = forwardScore;
+    fixture->dag.nodes[fixture->dag.bos].bestPrefixScore =
+        -std::ldexp(1.0F, -24);
+    SentenceResult forward{{&fixture->a, &fixture->x}, forwardScore};
+    Counters counters;
+    const auto results = enumerate(
+        fixture->dag, forward, 3, 0.0F,
+        -std::numeric_limits<float>::max(), counters);
+    FCITX_ASSERT(results.size() == 1);
+    FCITX_ASSERT(results[0].toString() == "ax");
+    FCITX_ASSERT(counters.completePathDedupRejects >= 1);
+    FCITX_ASSERT(counters.completePathsMaterialized >= 2);
+    FCITX_ASSERT(!counters.invariantFailure);
 }
 
 void testFiniteMinPathAndBosExemption() {
@@ -302,6 +327,7 @@ int main() {
     testLazyMergeAndTie();
     testCompleteStringDedup();
     testPartialMaxDistance();
+    testDuplicateBeforeDistance();
     testFiniteMinPathAndBosExemption();
     testInfinityAndNan();
     testLazyEdgeMaterializedOnce();

@@ -346,6 +346,11 @@ std::vector<SentenceResult> enumerate(ScoredDag &dag,
         if (counters.invariantFailure) {
             break;
         }
+        auto text = result.toString();
+        if (duplicates.contains(text)) {
+            counters.completePathDedupRejects++;
+            continue;
+        }
         const float distance = dag.eosBestScore - result.score();
         if (std::isnan(result.score()) || std::isnan(distance)) {
             counters.invariantFailure = true;
@@ -354,11 +359,7 @@ std::vector<SentenceResult> enumerate(ScoredDag &dag,
         if (distance > maxDistance) {
             break;
         }
-        auto text = result.toString();
-        if (!duplicates.insert(text).second) {
-            counters.completePathDedupRejects++;
-            continue;
-        }
+        duplicates.insert(std::move(text));
         results.push_back(std::move(result));
     }
     return results;

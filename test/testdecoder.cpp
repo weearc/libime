@@ -73,9 +73,10 @@ void testBuildScoredDag(PinyinDecoder &decoder, const char *pinyin,
             if (node.latticeNode->from() == intermediateNode) {
                 FCITX_ASSERT(node.incomingCount >= 1);
                 if (beamSize == 0) {
-                    FCITX_ASSERT(node.incomingCount >= 2);
+                    FCITX_ASSERT(node.incomingCount == intermediateCount);
                 } else {
-                    FCITX_ASSERT(node.incomingCount <= beamSize);
+                    FCITX_ASSERT(node.incomingCount ==
+                                 std::min(beamSize, intermediateCount));
                 }
             }
         }
@@ -133,6 +134,30 @@ void testDecoderV2Differential(PinyinDecoder &decoder) {
                         FCITX_ASSERT(
                             std::bit_cast<uint32_t>(results[i].score()) ==
                             std::bit_cast<uint32_t>(legacy.score()));
+                        const bool nonTied =
+                            i == 0 || std::bit_cast<uint32_t>(
+                                          lattice.sentence(i - 1).score()) !=
+                                      std::bit_cast<uint32_t>(legacy.score());
+                        if (nonTied) {
+                            FCITX_ASSERT(results[i].sentence().size() ==
+                                         legacy.sentence().size());
+                            for (size_t j = 0; j < legacy.sentence().size();
+                                 j++) {
+                                const auto *v2Node = results[i].sentence()[j];
+                                const auto *legacyNode = legacy.sentence()[j];
+                                FCITX_ASSERT(v2Node == legacyNode);
+                                FCITX_ASSERT(v2Node->from() ==
+                                             legacyNode->from());
+                                FCITX_ASSERT(v2Node->to() == legacyNode->to());
+                                FCITX_ASSERT(v2Node->path().size() ==
+                                             legacyNode->path().size());
+                                for (size_t k = 0; k < v2Node->path().size();
+                                     k++) {
+                                    FCITX_ASSERT(v2Node->path()[k] ==
+                                                 legacyNode->path()[k]);
+                                }
+                            }
+                        }
                     }
                 }
             }
