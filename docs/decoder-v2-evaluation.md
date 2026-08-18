@@ -27,7 +27,8 @@ required by this branch.
 
 Performance numbers below came from an Android arm64 device benchmark
 environment. Correctness is host-level and does not depend on device logs.
-The branch is based on current upstream `master` at commit `c8fa490`.
+The branch is based on current upstream `master`; the exact final base is
+recorded in the hardening report.
 
 ## 6. Measurement Method
 
@@ -100,10 +101,18 @@ Pathological p95 was 63.751 ms, 33.380 ms, and 14.959 ms respectively.
 The memo control reduces repeated model calls. V2 additionally reuses ranked
 suffix streams and only materializes edges needed by requested results.
 
+The no-provider enumerator overload was validated only with fully pre-scored
+test DAGs; callers must not use it with unmaterialized edges.
+
 ## 14. Known Regressions
 
 V2 may be slower on low and medium complexity inputs because it builds and
 maintains DAG topology that Legacy can traverse cheaply.
+
+The semantic differential campaign intentionally does not cover Legacy's
+10,000-expansion budget-exhausted regime. It also does not claim identical
+ordering for exact-score ties: V2 is deterministic, while Legacy has no stable
+secondary comparator contract.
 
 ## 15. Interpretation
 
@@ -114,11 +123,12 @@ requests, while Legacy remains a reasonable default for low ambiguity.
 
 The performance sample is device-specific, and the private 158-fixture corpus
 is not included here. Device measurements are supplementary evidence, not a
-claim of universal speedup.
+claim of universal speedup. Semantic differential evidence does not cover
+Legacy budget exhaustion or establish exact-score tie-order identity.
 
 ## 17. Reproduction Notes
 
-Build the host tests with the repository-local toolchain, run `testdecoderv2`
-and `testdecoder`, and inspect the differential assertions. Repeat device
-measurements only with an explicitly selected benchmark environment; this RFC
-does not add a runtime switch.
+Build the host tests with the repository-local toolchain, run `testdecoderv2`,
+`testdecoder`, and `testpinyincontext`, and inspect the differential
+assertions. Repeat device measurements only with an explicitly selected
+benchmark environment; this RFC does not add a runtime switch.

@@ -33,7 +33,10 @@ adaptive dispatch, public ABI, or the Legacy production path.
 
 For an identical scored lattice, V2 must preserve result count, complete text,
 ordering, exact score bits, path composition, deduplication, maxDistance,
-minPath, beam, tie, search-cap, and N-best behavior.
+minPath, beam, and N-best behavior in the normal regime before Legacy's global
+backward-search budget is exhausted. Exact-score tie ordering is intentionally
+not claimed equivalent: Legacy has no explicit secondary comparator, while V2
+uses an explicit deterministic order.
 
 ## 7. Search-Graph Properties
 
@@ -45,7 +48,11 @@ to a target, in the same predecessor order used by forward search.
 
 An edge score is the language-model transition from the predecessor state to the
 target node plus the target cost. A not-yet-materialized edge contains NaN as a
-private sentinel; NaN is never exposed as a result score.
+private sentinel; NaN is never exposed as a result score. NaN is reserved for
+this internal state. A provider that returns NaN is treated as an invalid
+scoring state and causes `invariantFailure`. This is stricter than Legacy's
+incidental floating-point propagation; production integration must decide
+whether to keep this policy or use an explicit materialization flag.
 
 ## 9. V2 Architecture Overview
 
@@ -64,6 +71,10 @@ score, and a stable ordinal used for deterministic ties.
 When a candidate first enters a node heap, its edge score is requested. The
 materialized value is retained for the remainder of that enumeration, so each
 edge is scored at most once.
+
+The overload that omits an `EdgeScoreProvider` is a pre-scored-DAG test helper.
+Its caller must ensure every edge needed by enumeration already contains a
+materialized, non-NaN score. It is not a production scoring path.
 
 ## 12. Per-Node Lazy Suffix Enumeration
 
@@ -102,10 +113,20 @@ The DAG builder includes only the beam-sized predecessor prefix for each target.
 No new search budget is introduced. Existing caller values are passed through
 unchanged by the test integration.
 
+Legacy also has a global `MAX_BACKWARD_SEARCH_SIZE` expansion cap. Its
+observable effect is tied to the path-centric priority queue and has no direct
+one-to-one counter in the lazy DAG enumerator. V2 does not emulate that
+implementation-specific cutoff; equivalence claims therefore apply before
+Legacy budget exhaustion. A future V2 resource bound must use V2's own work
+and memory model rather than a copied queue-push number.
+
 ## 17. Tie Handling and Determinism
 
 Equal scores are ordered by edge ordinal and then child rank. Ordinals follow
-the lattice predecessor order, making repeated runs deterministic.
+the lattice predecessor order, making repeated V2 runs deterministic. For
+strictly ordered scores this is expected to agree with Legacy. Legacy does not
+define a stable secondary order for exact ties, so byte-for-byte tie ordering
+equivalence is not a contract.
 
 ## 18. Lifetime and Ownership
 
@@ -129,8 +150,9 @@ repeated path work.
 
 The private unit tests cover lazy merge, ties, complete-string deduplication,
 distance and path thresholds, non-finite values, one-time edge materialization,
-and randomized differential enumeration. A host test also compares Legacy and
-V2 on the same scored lattice across varied inputs and limits.
+randomized differential enumeration, and repeated-run tie determinism. A host
+test also compares Legacy and V2 on the same scored lattice across varied
+inputs, beam values, and limits.
 
 ## 22. Known Trade-offs
 
@@ -154,6 +176,12 @@ warranted.
 
 ## 25. Open Questions / Future Work
 
-Reviewers should assess memory limits, error handling policy, and the preferred
-long-term ownership boundary for an internal alternative. Adaptive selection,
-new optimizations, and production dispatch are intentionally deferred.
+Reviewers should assess acceptable temporary DAG memory, lazy-rank memo growth,
+appropriate global and per-node work limits, and the ownership/lifetime
+boundary for borrowed `LatticeNode` pointers. They should also review failure
+behavior for invalid or non-finite scoring state and whether deterministic
+exact-tie ordering should remain a V2 property. A production V2 integration
+still needs a resource bound, potentially based on total memoized ranks, lazy
+heap pushes, materialized edges, temporary bytes, per-node ranks, or elapsed
+decode work. No policy is selected here. Adaptive selection, new optimizations,
+and production dispatch are intentionally deferred.
