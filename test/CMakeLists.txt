@@ -32,6 +32,12 @@ foreach(TESTCASE ${LIBIME_SINGLE_FILE_TEST})
              COMMAND ${TESTCASE})
 endforeach()
 
+add_executable(testdecoderv2
+    testdecoderv2.cpp
+    ../src/libime/core/decoder_v2.cpp)
+target_link_libraries(testdecoderv2 LibIME::Core)
+add_test(NAME testdecoderv2 COMMAND testdecoderv2)
+
 if (ENABLE_DATA)
     add_dependencies(testpinyinime_unit lm)
     add_dependencies(testdecoder dict lm)
